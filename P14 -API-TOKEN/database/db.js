@@ -3,6 +3,12 @@ const Sequelize = require('sequelize');
 const sequelize = new Sequelize('senac', 'root', '', {
     host: 'localhost',
     dialect: 'mysql'
+    // dialectOptions: {
+    //     ssl: {
+    //         require: false,
+    //         rejectUnauthorized: false
+    //     }
+    // }
 });
 
 sequelize.authenticate().then( () => {
@@ -10,6 +16,5 @@ sequelize.authenticate().then( () => {
 }).catch( (err) => {
     console.log(`Erro Conexão: ${err}`);
 })
-
 
 module.exports = sequelize;

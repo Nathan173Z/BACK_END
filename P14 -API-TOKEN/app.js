@@ -1,100 +1,93 @@
 const express = require('express');
+var cors = require('cors');
+
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const  { promisify } = require('util');
 const app = express();
-const User = require('./models/User');
 require('dotenv').config();
+const { validaToken } = require('./middlewares/auth');
+
+const User = require('./models/User');
+
 const sendMail = require('./providers/mailProvider');
+const { userCreateMailTemplate } = require('./template/userCreateMail')
 
 app.use(express.json());
-app.use(express.urlencoded({extended: true}))
+app.use(express.urlencoded({ extended: true}))
+
+app.use( (req, res, next) =>{
+    res.header("Access-Control-Allow-Origin", "*");
+    res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE");
+    res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
+    app.use(cors());
+    next();
+})
 
 app.get("/", function (request, response) {
     response.send("Serviço API Rest iniciada...");
 })
 
-
-app.get("/users", validarToken, async (req, res) =>{
+app.get("/users", validaToken, async (req, res) =>{
     await User.findAll({
-        attributes: ['id','name','email','gender'],
-        order:[['name','ASC']]
-
+        attributes: ['id', 'name', 'email', 'gender'],
+        order:[['name', 'ASC']]
     })
     .then( (users) =>{
         return res.json({
-            erro:false,
+            erro: false,
             users
         });
     }).catch( (err) => {
         return res.status(400).json({
-            erro:true,
-            mensagem:`Erro: ${err} ou Nenhum Usuário entrado!!!`
+            erro: true,
+            mensagem: `Erro: ${err} ou Nenhum Usuário encontrado!!!`
         })
     })
-    
+
+
 })
 
-app.get('/users/:id', async (req, res) =>{
-    
-    const {id} = req.params;
-    try{
-        // await.User.findAll({where:{id: id}})
-
+app.get('/user/:id', async (req, res) => {
+    const { id } = req.params;
+    try {
+        // await User.findAll({ where: {id: id}})
         const users = await User.findByPk(id);
         if(!users){
             return res.status(400).json({
-                erro:true,
-                mensagem: "Erro: Nenhum Usuário entrado"
+                erro: true,
+                mensagem: "Erro: Nenhum Usuário encontrado!"
             })
         }
         res.status(200).json({
             erro:false,
             users
         })
-    } catch (err) {
+    } catch (err){
         res.status(400).json({
-            erro:true,
+            erro: true,
             mensagem: `Erro: ${err}`
         })
     }
-})
+});
 
 app.post("/user", async (req, res) => {
-
     var dados = req.body;
     dados.password = await bcrypt.hash(dados.password, 8);
-    let email = dados.email;
-    let name = dados.name;
-    let gender = dados.gender;
-
+   
     await User.create(dados)
     .then( ()=>{
         /* enviar e-mail */
-        let to = email;
+        let to = dados.email;
         let cc = '';
-        var htmlbody = "";
-        htmlbody += '<div style="background-color:#000; margin-bottom:150px;">';
-        htmlbody += '<div style="margin-top:150px;">';
-        htmlbody += '<p style="color:#fff; font-weight:bold;margin-top:50px;">';
-        htmlbody += 'Olá {name},';
-        htmlbody += '</p>';
-        htmlbody += '<p style="color:#fff; font-style:italic;margin-top:50px;">';
-        htmlbody += 'Sua conta foi criada com sucesso!';
-        htmlbody += '</p>';
-        htmlbody += '<p style="color:#fff;margin-top:50px;">';
-        htmlbody += 'Seu login é o seu email: {email}';
-        htmlbody += '</p>';
-        htmlbody += '<p style="color:#fff;margin-top:50px;">';
-        htmlbody += 'Sexo: {gender}';
-        htmlbody += '</p>';
-        htmlbody += '</div>';
-        htmlbody += '</div>';
-        htmlbody = htmlbody.replace('{name}', name);
-        htmlbody = htmlbody.replace('{email}', email);
-        htmlbody = htmlbody.replace('{gender}', gender);
+        let subject = `Sua conta foi criada com sucesso!`;
+
+        let mailBody = userCreateMailTemplate({
+            name: dados.name,
+            email: dados.email,
+            gender: dados.gender
+        })
+        sendMail(to, cc, subject , mailBody);
         /* ************* */
-        sendMail(to, cc, 'Sua conta foi criada com sucesso!', htmlbody);
 
         return res.json({
             erro: false,
@@ -108,125 +101,90 @@ app.post("/user", async (req, res) => {
     })
 })
 
-app.put("/user", async (req, res) =>{
+app.put("/user", async (req, res) => {
     const { id } = req.body;
 
     await User.update(req.body, {where: {id}})
-    .then(()=> {
+    .then(() => {
         return res.json({
             erro:false,
-            mensagem: 'Usuário alterado com sucesso'
+            mensagem: 'Usuário alterado com sucesso!'
         })
-    }).catch( (err)=>{
+    }).catch( (err) =>{
         return res.status(400).json({
             erro: true,
-            mensagem: `Erro: Usuário não alterado...${err}`
+            mensagem: `Erro: Usuário não alterado ...${err}`
         })
     })
 })
-    
-    app.delete("/user/:id", async (req, res) => {
-        const {id} = req.params;
-        await User.destroy({ where: {id}})
-        .then( () => {
-            return res.json({
-                erro: false,
-                mensagem: "Usuário deletado com sucesso"
-            });
-        }).catch( (err) =>{
-            return res.status(400).json({
-                erro:true,
-                mensagem: `Erro: ${err} Usuário não deletado`
-            });
-        })
-    })
 
+app.delete("/user/:id", async (req, res) => {
+    const { id } = req.params;
+    await User.destroy({ where: {id}})
+    .then( () => {
+        return res.json({
+            erro: false,
+            mensagem: "Usuário apagado com sucesso!"
+        });
+    }).catch( (err) =>{
+        return res.status(400).json({
+            erro: true,
+            mensagem: `Erro: ${err} Usuário não apagado...`
+        });
+    });
+});
 
 app.post("/login", async (req, res) => {
     const user = await User.findOne({
-        attributes: ['id','name','email','gender','password'],
+        attributes: ['id', 'name', 'email', 'gender', 'password'],
         where: {
             email: req.body.email
         }
     })
     if(user === null){
         return res.status(400).json({
-            erro:true,
-            mensagem:"Usuário ou senha incorreta"
+            erro: true,
+            mensagem:"Erro: Email ou senha incorreta!!!"
         })
     }
     if(!(await bcrypt.compare(req.body.password, user.password))){
         return res.status(400).json({
             erro: true,
-            mensagem: "Erro: Usuário ou senha incorreta"
+            mensagem: "Erro: Email ou senha incorreta!!!"
         })
     }
 
-    var token = jwt.sign({id: user.id }, process.env.SECRET,{
-        expiresIn: 600 // 10min, '7d' '7dias
+    let token = jwt.sign({id: user.id}, process.env.SECRET, {
+        expiresIn: 600
     })
-
 
     return res.json({
         erro:false,
-        mensagem: "Login realizado com sucesso",
-       token
+        mensagem: "Login realizado com sucesso!!!",
+        token
     })
 })
-
-async function  validarToken(req, res, next){
-    // return res.json({mensage:'Validar token!'})
-    const authHeader = req.headers.authorization;
-    const [bearer, token] = authHeader.split(' ');
-
-    if (!token){
-        return res.status(400).json({
-            erro:true,
-            mensagem:'Erro Necessário realizar o login'
-        });
-    };
-
-try{
-    const decoded = await promisify(jwt.verify)(token, process.env.SECRET);
-    req.userId = decoded.id;
-    console.log(req.userId);
-
-    return next();
-} catch(err) {
-    if(err){
-    return res.status(400).json({
-        erro: true,
-        mensagem: `Erro: ${err}`
-        })
-} else {
-    return res.status(401).json({
-        erro:true,
-        mensagem:"Erro: Nescessário realizar login"
-    })
-  }
-}
-}
-
 
 app.put('/user-senha', async (req, res) => {
     const {id, password } = req.body;
     var senhaCrypt = await bcrypt.hash(password, 8);
 
-    await User.update({password: senhaCrypt}, {where: {id: id}})
-    .then(() =>{
+    await User.update({password: senhaCrypt }, {where: {id: id}})
+    .then(() => {
         return res.json({
-            erro:false,
-            mensagem:"Senha alterada com sucesso"
-        });
-    }).catch( (err) =>{
+            erro: false,
+            mensagem: "Senha edita com sucesso!"
+        }); 
+    }).catch( (err) => {
         return res.status(400).json({
             erro: true,
-            mensagem: `Erro: ${err}... A senha não foi alterada`
+            mensagem: `Erro: ${err}... A senha não foi alterada!!!`
         })
     })
 })
 
-    
-app.listen(process.env.PORT, () => {
-    console.log(`Servidor iniciado na porta ${process.env.PORT} http://localhost:${process.env.PORT}`)});
 
+
+app.listen(process.env.PORT, () => {
+    console.log(`Servidor iniciado na porta ${process.env.PORT} http://localhost:${process.env.PORT}`);
+});
